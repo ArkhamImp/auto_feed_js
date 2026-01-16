@@ -68,6 +68,7 @@
 // @match        http*://cinemaz.to/torrent/*
 // @match        https://zhuque.in/torrent/*
 // @match        https://www.yemapt.org/*
+// @match        https://rousi.pro/*
 // @match        https://beyond-hd.me/download_check/*
 // @match        http*://passthepopcorn.me/torrents.php?id*
 // @match        http*://*php?id=*&torrentid=*
@@ -104,6 +105,7 @@
 // @grant        GM_setClipboard
 // @grant        GM_setValue
 // @grant        GM_getValue
+// @grant        GM_xmlhttpRequest
 // @grant        GM_deleteValue
 // @grant        GM_download
 // @grant        GM_getResourceText
@@ -1055,6 +1057,7 @@ const default_site_info = {
     'Panda': {'url': 'https://pandapt.net/', 'enable': 1},
     'KuFei': {'url': 'https://kufei.org/', 'enable': 1},
     'RouSi': {'url': 'https://rousi.zip/', 'enable': 1},
+    'RouSi.Pro': {'url': 'https://rousi.pro/', 'enable': 1},
     'GTK': {'url': 'https://pt.gtk.pw/', 'enable': 1},
     '麒麟': {'url': 'https://www.hdkyl.in/', 'enable': 1},
     'AGSV': {'url': 'https://www.agsvpt.com/', 'enable': 1},
@@ -2228,6 +2231,12 @@ function judge_if_the_site_as_source() {
     }
     if (site_url.match(/^https:\/\/www.yemapt.org\/#\/torrent\/add\?/i)) {
         return 0;
+    }
+    if (site_url.match(/^https:\/\/rousi.pro\/upload(\.php)?#separator#/i)) {
+        return 0;
+    }
+    if (site_url.match(/^https:\/\/rousi.pro\/details\/\d+/i)) {
+        return 1;
     }
     if (site_url.match(/^https?:\/\/(avistaz|privatehd|cinemaz).to\/upload\/torrent\/\d+/i)) {
         return 6;
@@ -4219,6 +4228,8 @@ function set_jump_href(raw_info, mode) {
                     forward_url = used_site_info[key].url + 'upload';
                 } else if (key == '影') {
                     forward_url = used_site_info[key].url + 'p_torrent/video_upload.php';
+                } else if (key == 'RouSi.Pro') {
+                    forward_url = used_site_info[key].url + 'upload';
                 } else if (key == 'Aither' || key == 'FNP' || key == 'OnlyEncodes' || key == 'DarkLand' || key == 'ReelFliX') {
                     var type_dict = {'电影': 1, '剧集': 2, '动漫': 2, '综艺': 2, '纪录': 2, '音乐': 3, '体育': 2, 'MV': 3};
                     if (raw_info.type == '纪录' && !raw_info.name.match(/S\d+|E\d+/)) {
@@ -4283,6 +4294,8 @@ function set_jump_href(raw_info, mode) {
                         forward_url = used_site_info[key].url + 'browse.php?incldead=0&search={url}'.format({'url': search_name});
                     } else if (key == 'MTeam') {
                         forward_url = used_site_info[key].url + `browse?keyword=${search_name}`;
+                    } else if (key == 'RouSi.Pro') {
+                        forward_url = used_site_info[key].url + `search?q=${search_name}`;
                     } else if (key == 'TVV') {
                         forward_url = used_site_info[key].url + 'torrents.php?action=advanced&searchstr=&searchtags=&tags_type=1&groupdesc=&imdbid={url}'.format({'url': url});
                     } else if (key == 'DarkLand' || key == 'ACM' || key == 'BLU' || key == 'Monika' || key == 'Tik' || key == 'Aither' || key == 'FNP' || key == 'OnlyEncodes' || key == 'ReelFliX') {
@@ -4710,6 +4723,44 @@ function fill_torrent(forward_site, container, name) {
         $('#fileList').wait(function(){
             ant_form_instance?.context?.setFieldsValue({ 'fileList': [...container.files].map(f =>{ f.originFileObj = f; return f}) }); //files要转为数组，并且添加originFileObj属性为自身
         });
+    } else if (forward_site == 'RouSi.Pro' && site_url.match(/rousi\.pro/)) {
+        // RouSi React Hook Form 架构的文件上传处理
+        $('input[type="file"]').wait(function(){
+            // 查找所有文件输入框，优先使用非隐藏的，或者第一个
+            const fileInputs = Array.from(document.querySelectorAll('input[type="file"]'));
+            let fileInput = fileInputs.find(input => !input.classList.contains('hidden')) || fileInputs[0];
+            
+            if (fileInput) {
+                // 使用 DataTransfer 设置文件
+                const dataTransfer = new DataTransfer();
+                Array.from(container.files).forEach(file => {
+                    dataTransfer.items.add(file);
+                });
+                fileInput.files = dataTransfer.files;
+                
+                // 触发各种事件（不需要设置 value，因为文件输入框不允许程序设置 value）
+                const events = ['input', 'change', 'blur'];
+                events.forEach(eventType => {
+                    const event = new Event(eventType, { bubbles: true, cancelable: true });
+                    fileInput.dispatchEvent(event);
+                });
+                
+                // 如果是拖拽上传区域，尝试触发 drop 事件
+                const dropZone = fileInput.closest('[class*="upload"], [class*="drop"]');
+                if (dropZone) {
+                    const dropEvent = new DragEvent('drop', {
+                        bubbles: true,
+                        cancelable: true,
+                        dataTransfer: dataTransfer
+                    });
+                    dropZone.dispatchEvent(dropEvent);
+                }
+                
+                console.log('✓ RouSi 种子文件已上传:', name);
+            } else {
+                console.log('❌ 未找到文件输入框');
+            }
+        }, 100, 50);
     }
     else {
         $('input[name=file]')[0].files = container.files;
@@ -15366,7 +15417,7 @@ function auto_feed() {
         }
         if (['CMCT', 'PTsbao', 'HDCity', 'BLU', 'UHD', 'HDSpace', 'HDB', 'iTS', 'PTP', 'BYR', 'GPW', 'HDTime', 'HD-Only', 'HDfans',
         'SC', 'MTV', 'NBL', 'avz', 'PHD', 'CNZ', 'ANT', 'TVV', 'xthor', 'HDF', 'OpenCD', 'PigGo', 'RED', 'Tik', 'Aither', 'SugoiMusic', 'CG',
-        'ZHUQUE', 'MTeam', 'FNP', 'OnlyEncodes', 'YemaPT', 'DarkLand', '影', 'PTLGS', 'ReelFliX'].indexOf(forward_site) < 0){
+        'ZHUQUE', 'MTeam', 'FNP', 'OnlyEncodes', 'YemaPT', 'DarkLand', '影', 'PTLGS', 'ReelFliX', 'RouSi.Pro'].indexOf(forward_site) < 0){
             if (forward_site == 'HDT') {
                 descr_box[0].style.height = '600px';
                 var mediainfo_hdt = get_mediainfo_picture_from_descr(raw_info.descr);
@@ -16047,6 +16098,8 @@ function auto_feed() {
                     if (labels.complete) { check_label(document.getElementsByName('tags[4][]'), '10');}
                     if (labels.yz){ check_label(document.getElementsByName('tags[4][]'), '14'); }
                     if (raw_info.standard_sel == '4K'){ check_label(document.getElementsByName('tags[4][]'), '18'); }
+                    break;
+                case 'RouSi.Pro':
                     break;
                 case 'PTCafe':
                     if (labels.complete) { check_label(document.getElementsByName('tags[4][]'), '3');}
@@ -17502,6 +17555,441 @@ function auto_feed() {
                 }
                 runSequence(medium_code, standard_code, videoCodec, audioCodec, source_code, team_code, tags, type_code);
             }, 1000/*次*/, 200/*毫秒/次*/);
+        }
+
+        else if (forward_site == 'RouSi.Pro' && site_url.match(/rousi\.pro/)) {
+            // RouSi Pro 新版架构适配（参考 rousi_to_pro.js 实现）
+            // 使用更可靠的方法来填充 React Hook Form 控件
+            
+            // 辅助函数：使用原生 setter 设置输入框的值
+            function setInputValue(input, value) {
+                const prototype = Object.getPrototypeOf(input);
+                const descriptor = Object.getOwnPropertyDescriptor(prototype, 'value');
+                const nativeSetter = descriptor.set;
+                nativeSetter.call(input, value);
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            
+            // 辅助函数：使用原生 setter 设置下拉框的值
+            function setSelectValue(select, value) {
+                const proto = Object.getPrototypeOf(select);
+                const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+                const nativeSetter = desc.set;
+                nativeSetter.call(select, value);
+                select.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            
+            // 辅助函数：从 URL 加载文件并填充到文件输入框
+            function fillFileInputFromUrl(fileInput, fileUrl, fileName) {
+                GM_xmlhttpRequest({
+                    method: 'GET',
+                    url: fileUrl,
+                    responseType: 'blob',
+                    onload: res => {
+                        const file = new File([res.response], fileName, { type: res.response.type });
+                        const dt = new DataTransfer();
+                        for (const f of fileInput.files) {
+                            dt.items.add(f);
+                        }
+                        dt.items.add(file);
+                        fileInput.files = dt.files;
+                        fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+                        console.log('✓ 文件已上传:', fileName);
+                    },
+                    onerror: err => {
+                        console.log('⚠ 文件上传失败:', fileName, err);
+                    }
+                });
+            }
+            
+            // BBCode 转 Markdown
+            function bbcode2markdown(text) {
+                text = text.replace(/\[size=\d\]/ig, '').replace(/\[\/size\]/ig, '');
+                text = text.replace(/\[font=.+?\]/ig, '').replace(/\[\/font\]/ig, '');
+                text = text.replace(/\[color=.+?\]/ig, '').replace(/\[\/color\]/ig, '');
+                text = text.replace(/\[img\](.*?)\[\/img\]/ig, '![_]($1)');
+                text = text.replace(/\[b\]\s*/ig, '**').replace(/\s*\[\/b\]/ig, '**');
+                text = text.replace(/\[i\]\s*/ig, '*').replace(/\s*\[\/i\]/ig, '*');
+                text = text.replace(/\[url=([^\]]*?)\](.*?)\[\/url\]/ig, '[$2]($1)');
+                text = text.replace(/\[quote\](.*?)\[\/quote\]/isg, (m, n) => '> '+ n.split('\n').join('\n> ')+'\n\n');
+                return text;
+            }
+            
+            console.log('========== 开始 RouSi Pro 转种流程 ==========');
+            console.log('raw_info:', raw_info);
+            
+            // 等待表单加载，延迟 2 秒确保 React 组件完全渲染
+            setTimeout(function() {
+                const selects = document.querySelectorAll("select");
+                const inputs = document.querySelectorAll("input");
+                const textareas = document.querySelectorAll("textarea");
+                
+                if (selects.length === 0 || inputs.length === 0) {
+                    console.log('⚠ 表单未加载完成，请刷新页面重试');
+                    return;
+                }
+                
+                console.log('✓ 表单已加载，开始填充数据...');
+                
+                // 1. 填充分类（第一个 select）
+                console.log('\n[1] 填充分类...');
+                const categoryMap = {
+                    '电影': 'movie',
+                    '剧集': 'tv',
+                    '电视剧': 'tv',
+                    '短剧': 'tv',
+                    '综艺': 'variety',
+                    '纪录': 'documentary',
+                    '纪录片': 'documentary',
+                    '动漫': 'animation',
+                    'MV': 'music',
+                    '音乐': 'music',
+                    '体育': 'sports',
+                    '软件': 'software',
+                    '电子书': 'ebook',
+                    'AV': '9kg',
+                    '9KG': '9kg',
+                    '其他': 'other'
+                };
+                
+                let category_value = categoryMap[raw_info.type] || 'other';
+                if (category_value) {
+                    setSelectValue(selects[0], category_value);
+                    console.log('✓ 分类已填充:', category_value);
+                }
+                
+                // 2. 等待分类选择后表单更新，然后填充其他字段
+                setTimeout(function() {
+                    // 重新获取元素，因为分类变化可能导致表单结构变化
+                    const selects = document.querySelectorAll("select");
+                    const inputs = document.querySelectorAll("input");
+                    
+                    // 3. 填充地区（第二个 select）
+                    console.log('\n[2] 填充地区...');
+                    if (raw_info.source_sel && selects.length > 1) {
+                        // 从描述中提取地区信息
+                        let country = raw_info.source_sel;
+                        const descr = raw_info.descr || '';
+                        const countryMatch = descr.match(/◎产\s*地\s*(.+)/);
+                        if (countryMatch) {
+                            country = countryMatch[1].replace(/中国/, '').trim();
+                        }
+                        setSelectValue(selects[1], country);
+                        console.log('✓ 地区已填充:', country);
+                    }
+                    
+                    // 4. 填充编码（第三个 select - 根据标题智能匹配）
+                    console.log('\n[3] 填充编码...');
+                    if (selects.length > 2) {
+                        const options = selects[2].options;
+                        for (let i = options.length - 1; i >= 0; i--) {
+                            const items = options[i].value.split("/");
+                            let matched = false;
+                            for (let j = 0; j < items.length; j++) {
+                                if (raw_info.name.toLowerCase().includes(items[j].toLowerCase().trim())) {
+                                    setSelectValue(selects[2], options[i].value);
+                                    console.log('✓ 编码已匹配:', options[i].value);
+                                    matched = true;
+                                    break;
+                                }
+                            }
+                            if (matched) break;
+                        }
+                    }
+                    
+                    // 5. 填充分辨率（第四个 select - 根据标题智能匹配）
+                    console.log('\n[4] 填充分辨率...');
+                    if (selects.length > 3) {
+                        const options = selects[3].options;
+                        for (let i = options.length - 1; i >= 0; i--) {
+                            const items = options[i].value.split("/");
+                            let matched = false;
+                            for (let j = 0; j < items.length; j++) {
+                                if (raw_info.name.toLowerCase().includes(items[j].toLowerCase().trim())) {
+                                    setSelectValue(selects[3], options[i].value);
+                                    console.log('✓ 分辨率已匹配:', options[i].value);
+                                    matched = true;
+                                    break;
+                                }
+                            }
+                            if (matched) break;
+                        }
+                    }
+                    
+                    // 6. 选择类型标签（按钮）
+                    console.log('\n[5] 选择类型标签...');
+                    const descr = raw_info.descr || '';
+                    // 从描述中提取类别信息
+                    const labelStr = descr.match(/◎类\s*别\s*(.+)/)?.[1];
+                    const labels = labelStr ? labelStr.replaceAll(/\s/g, "").split("/") : [];
+                    
+                    const buttonContainer = document.querySelector('div[class="flex flex-wrap gap-2"]');
+                    if (buttonContainer && labels.length > 0) {
+                        buttonContainer.querySelectorAll('button').forEach(btn => {
+                            if (labels.includes(btn.innerText.trim())) {
+                                btn.click();
+                                console.log('✓ 已选择标签:', btn.innerText.trim());
+                            }
+                        });
+                    }
+                    
+                    // 7. 提取并上传所有图片（海报和截图）
+                    console.log('\n[6] 提取并上传所有图片...');
+                    const fileInputs = Array.from(document.querySelectorAll('input[type="file"]'));
+                    
+                    // 从描述中提取所有图片（包括海报和截图）
+                    const allImgMatches = descr.match(/(\[url=.*?\])?\[img\](.*?)\[\/img\](\[\/url\])?/gi) || [];
+                    const imgUrls = [];
+                    
+                    if (allImgMatches.length > 0) {
+                        // 参考 get_mediainfo_picture_from_descr 的逻辑，区分海报和截图
+                        const index_of_info = descr.match(/◎译.{2,10}名|◎片.{2,10}名|片.{2,10}名/)?.index || 0;
+                        let coverImg = null;
+                        const screenshotImgs = [];
+                        
+                        allImgMatches.forEach(imgTag => {
+                            const imgUrlMatch = imgTag.match(/\[img\](.*?)\[\/img\]/i);
+                            if (imgUrlMatch && imgUrlMatch[1]) {
+                                const imgUrl = imgUrlMatch[1];
+                                const imgIndex = descr.indexOf(imgTag);
+                                
+                                // 过滤掉 Mediainfo.png 和 MoreScreenshot.png
+                                if (imgUrl.match(/Mediainfo\.png|MoreScreenshot\.png/i)) {
+                                    console.log('⚠ 跳过特殊图片:', imgUrl);
+                                    return;
+                                }
+                                
+                                // 判断是海报还是截图：位置靠前或在"片名"之前的通常是海报
+                                if (imgIndex < 10 || imgIndex < index_of_info) {
+                                    coverImg = imgUrl;
+                                } else {
+                                    screenshotImgs.push(imgUrl);
+                                }
+                            }
+                        });
+                        
+                        // 上传海报（第二个文件输入框）
+                        if (fileInputs.length > 1 && coverImg) {
+                            const segments = coverImg.split("/");
+                            const imgFileName = segments[segments.length - 1] || 'cover.jpg';
+                            fillFileInputFromUrl(fileInputs[1], coverImg, imgFileName);
+                            console.log('✓ 海报已上传:', coverImg);
+                        }
+                        
+                        // 上传截图（第三个及以后的文件输入框）
+                        screenshotImgs.forEach((imgUrl, index) => {
+                            const segments = imgUrl.split("/");
+                            const imgFileName = segments[segments.length - 1] || `screenshot${index + 1}.jpg`;
+                            fillFileInputFromUrl(fileInputs[1], imgUrl, imgFileName);
+                            console.log(`✓ 截图 ${index + 1} 已上传:`, imgUrl);
+                        });
+                    }
+                    
+                    // 8. 上传种子文件（第一个文件输入框）
+                    console.log('\n[7] 上传种子文件...');
+                    if (fileInputs.length > 0 && raw_info.torrent_url) {
+                        // 清理种子文件名
+                        let torrent_name = raw_info.torrent_name || 'file.torrent';
+                        torrent_name = torrent_name.replace(/^\[.*?\](\.| )?/, '').replace(/ /g, '.').replace(/\.-\./, '-').trim();
+                        fillFileInputFromUrl(fileInputs[0], raw_info.torrent_url, torrent_name);
+                    }
+                    
+                    // 9. 填充标题（第二个文本输入框，第一个是文件输入）
+                    console.log('\n[8] 填充标题...');
+                    if (inputs.length > 1) {
+                        const title = raw_info.name.replace(/\.torrent$/, '');
+                        setInputValue(inputs[1], title);
+                        console.log('✓ 标题已填充:', title);
+                    }
+                    
+                    // 10. 填充副标题（第三个文本输入框）
+                    console.log('\n[9] 填充副标题...');
+                    if (inputs.length > 2 && raw_info.small_descr) {
+                        setInputValue(inputs[2], raw_info.small_descr);
+                        console.log('✓ 副标题已填充:', raw_info.small_descr);
+                    }
+                    
+                    // 11. 填充 IMDb 链接
+                    console.log('\n[10] 填充 IMDb...');
+                    const imdbInput = document.querySelector('input[placeholder="填入 IMDb 链接"]');
+                    if (imdbInput && raw_info.url) {
+                        const imdb_url = raw_info.url;
+                        // 如果没有完整链接，从描述中提取
+                        const imdbMatch = descr.match(/◎IMDb链接\s*(https?:\/\/\S+)/);
+                        const finalImdb = imdbMatch ? imdbMatch[1] : imdb_url;
+                        setInputValue(imdbInput, finalImdb);
+                        console.log('✓ IMDb 已填充:', finalImdb);
+                    }
+                    
+                    // 12. 填充豆瓣链接
+                    console.log('\n[11] 填充豆瓣...');
+                    const doubanInput = document.querySelector('input[placeholder="填入 豆瓣 链接"]');
+                    if (doubanInput) {
+                        // 尝试从 raw_info 或描述中提取
+                        let douban_url = raw_info.dburl || '';
+                        const doubanMatch = descr.match(/◎豆瓣链接\s*(https?:\/\/\S+)/);
+                        if (doubanMatch) douban_url = doubanMatch[1];
+                        if (douban_url) {
+                            setInputValue(doubanInput, douban_url);
+                            console.log('✓ 豆瓣已填充:', douban_url);
+                        }
+                    }
+                    
+                    // 13. 填充 TMDB 链接
+                    console.log('\n[12] 填充 TMDB...');
+                    const tmdbInput = document.querySelector('input[placeholder="填入 TMDB 链接"]');
+                    if (tmdbInput) {
+                        const tmdbMatch = descr.match(/◎TMDB链接\s*(https?:\/\/\S+)/);
+                        if (tmdbMatch) {
+                            setInputValue(tmdbInput, tmdbMatch[1]);
+                            console.log('✓ TMDB 已填充:', tmdbMatch[1]);
+                        }
+                    }
+                    
+                    // 14. 填充描述（第一个 textarea）
+                    console.log('\n[13] 填充描述...');
+                    const textareas = document.querySelectorAll("textarea");
+                    if (textareas.length > 0) {
+                        let clean_descr = raw_info.descr.trim();
+                        
+                        // 移除所有图片标签（海报和截图都已上传，不需要在描述中显示）
+                        clean_descr = clean_descr.replace(/(\[url=.*?\])?\[img\].*?\[\/img\](\[\/url\])?/gi, '');
+                        
+                        // 移除 MediaInfo（如果有的话）
+                        try {
+                            // 先找到所有 [quote]...[/quote] 块
+                            const quoteBlocks = [];
+                            let startIndex = 0;
+                            
+                            while (true) {
+                                const quoteStart = clean_descr.indexOf('[quote', startIndex);
+                                if (quoteStart === -1) break;
+                                
+                                // 找到对应的 [/quote]
+                                let quoteEnd = clean_descr.indexOf('[/quote]', quoteStart);
+                                if (quoteEnd === -1) break;
+                                
+                                quoteEnd += '[/quote]'.length;
+                                const quoteBlock = clean_descr.substring(quoteStart, quoteEnd);
+                                quoteBlocks.push(quoteBlock);
+                                
+                                startIndex = quoteEnd;
+                            }
+                            
+                            // 检查每个 quote 块是否包含 MediaInfo 特征
+                            let mediainfo_to_remove = null;
+                            
+                            for (let i = quoteBlocks.length - 1; i >= 0; i--) {
+                                const block = quoteBlocks[i];
+                                
+                                // 检查是否包含 MediaInfo 特征
+                                const isBDInfo = block.match(/DISC INFO:|\.MPLS|Video Codec|Disc Label/i) && 
+                                               (raw_info.medium_sel == 'UHD' || raw_info.medium_sel == 'Blu-ray');
+                                const isMediaInfo = block.match(/General|RELEASE\.NAME|RELEASE DATE|Unique ID|RESOLUTiON|Bitrate|帧　率|音频码率|视频码率|Complete name|Format|Codec ID|Duration|Bit rate|Frame rate/i);
+                                
+                                if (isBDInfo || isMediaInfo) {
+                                    mediainfo_to_remove = block;
+                                    break; // 取最后一个匹配的
+                                }
+                            }
+                            
+                            // 移除 MediaInfo
+                            if (mediainfo_to_remove) {
+                                clean_descr = clean_descr.replace(mediainfo_to_remove, '').trim();
+                                console.log('✓ 已从描述中移除 MediaInfo');
+                            }
+                        } catch (err) {
+                            console.log('⚠ MediaInfo 移除失败:', err);
+                        }
+                        
+                        // 清理多余的空行
+                        clean_descr = clean_descr.replace(/\n\n+/g, '\n\n').trim();
+                        
+                        // 转换为 Markdown
+                        const markdown_descr = bbcode2markdown(clean_descr);
+                        setInputValue(textareas[0], markdown_descr);
+                        console.log('✓ 描述已填充（已移除图片和 MediaInfo）');
+                    }
+                    
+                    // 15. 填充 MediaInfo（第二个 textarea）
+                    console.log('\n[14] 填充 MediaInfo...');
+                    if (textareas.length > 1) {
+                        let mediainfo = '';
+                        // 优先使用 raw_info.full_mediainfo
+                        if (raw_info.full_mediainfo) {
+                            mediainfo = raw_info.full_mediainfo;
+                        } else {
+                            // 参考 get_mediainfo_picture_from_descr 的逻辑，从描述中提取 MediaInfo
+                            // MediaInfo 通常包含特定关键词，匹配包含这些关键词的 [quote]...[/quote]
+                            try {
+                                const descr = raw_info.descr;
+                                let mediainfo_match = null;
+                                
+                                // 先找到所有 [quote]...[/quote] 块
+                                const quoteBlocks = [];
+                                let startIndex = 0;
+                                
+                                while (true) {
+                                    const quoteStart = descr.indexOf('[quote', startIndex);
+                                    if (quoteStart === -1) break;
+                                    
+                                    // 找到对应的 [/quote]
+                                    let quoteEnd = descr.indexOf('[/quote]', quoteStart);
+                                    if (quoteEnd === -1) break;
+                                    
+                                    quoteEnd += '[/quote]'.length;
+                                    const quoteBlock = descr.substring(quoteStart, quoteEnd);
+                                    quoteBlocks.push(quoteBlock);
+                                    
+                                    startIndex = quoteEnd;
+                                }
+                                
+                                // 检查每个 quote 块是否包含 MediaInfo 特征（从后往前，取最后一个）
+                                for (let i = quoteBlocks.length - 1; i >= 0; i--) {
+                                    const block = quoteBlocks[i];
+                                    
+                                    // 检查是否包含 MediaInfo 特征
+                                    const isBDInfo = block.match(/DISC INFO:|\.MPLS|Video Codec|Disc Label/i) && 
+                                                   (raw_info.medium_sel == 'UHD' || raw_info.medium_sel == 'Blu-ray');
+                                    const isMediaInfo = block.match(/General|RELEASE\.NAME|RELEASE DATE|Unique ID|RESOLUTiON|Bitrate|帧　率|音频码率|视频码率|Complete name|Format|Codec ID|Duration|Bit rate|Frame rate/i);
+                                    
+                                    if (isBDInfo || isMediaInfo) {
+                                        mediainfo_match = block;
+                                        break; // 取最后一个匹配的
+                                    }
+                                }
+                                
+                                if (mediainfo_match) {
+                                    // 清理 quote 标签，只保留内容
+                                    mediainfo = mediainfo_match.replace(/\[quote.*?\]/ig, '').replace(/\[\/quote\]/i, '').trim();
+                                    // 移除格式化标签
+                                    mediainfo = mediainfo.replace(/\[\/?(font|size|quote|color).{0,80}?\]/ig, '');
+                                }
+                            } catch (err) {
+                                console.log('⚠ MediaInfo 提取失败:', err);
+                            }
+                        }
+                        
+                        if (mediainfo) {
+                            setInputValue(textareas[1], mediainfo);
+                            console.log('✓ MediaInfo 已填充');
+                        } else {
+                            console.log('⚠ 未找到 MediaInfo');
+                        }
+                    }
+                    
+                    // 16. 勾选匿名复选框
+                    console.log('\n[15] 勾选匿名...');
+                    const checkbox = document.querySelector('input[type="checkbox"]');
+                    if (checkbox && !checkbox.checked) {
+                        checkbox.click();
+                        console.log('✓ 已勾选匿名');
+                    }
+                    
+                    console.log('\n========== RouSi Pro 表单填充完成 ==========');
+                }, 500); // 等待分类选择后表单更新
+                
+            }, 2000); // 等待表单加载
         }
 
         else if (forward_site == 'TTG'){
